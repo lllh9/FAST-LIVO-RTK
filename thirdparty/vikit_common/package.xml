@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="3">
+ <name>vikit_common</name>
+ <version>0.0.0</version>
+
+ <description>The vikit_common package</description>
+
+ <!-- One maintainer tag required, multiple allowed, one person per tag -->
+ <maintainer email="forster@ifi.uzh.ch">cforster</maintainer>
+
+ <!-- One license tag required, multiple allowed, one license per tag -->
+ <license>GPLv3</license>
+
+ <!-- Buildtool dependencies -->
+ <buildtool_depend>ament_cmake</buildtool_depend>
+
+ <!-- Dependencies (match find_package() in CMakeLists.txt) -->
+ <depend>rclcpp</depend>
+ <depend>cmake_modules</depend> <!-- for FindEigen.cmake module -->
+ <depend>eigen</depend>
+ <depend>libopencv-dev</depend>
+ <depend>fmt</depend>
+ <!-- Sophus is the non-templated a621ff build (NOT apt libsophus-dev, which is
+      templated and incompatible); it is built from source in the deps Docker
+      image (docker/scripts/build_sophus.sh), so it is intentionally not a
+      rosdep dependency here. -->
+
+ <export>
+   <build_type>ament_cmake</build_type>
+ </export>
+</package>

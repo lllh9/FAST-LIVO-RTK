@@ -1,0 +1,131 @@
+# ROS 2 parameter file for the HH-LVGO-01 dataset.
+#
+# All parameters live under the node `laserMapping`. The ROS 1 group/key names
+# (e.g. common/lid_topic) map to dotted ROS 2 names (common.lid_topic) via the
+# nested YAML below; the node reads them with automatically_declare_parameters_
+# from_overrides(true).
+#
+# The camera intrinsics (the `laserMapping:` sub-block) use the keys the ROS 2
+# vikit camera_loader expects (model/width/height/scale/fx/fy/cx/cy/d0..d3).
+# Values are the HH-LVGO-01 intrinsics (formerly config/camera_HH.yaml). The
+# active block MUST match the bag or visual tracking silently degrades.
+/laserMapping:
+  ros__parameters:
+    # Camera model + output path (read via the "laserMapping" namespace).
+    laserMapping:
+      # Default output dir (relative to the launch cwd). docker/run_demo.sh and
+      # launch/mapping.launch.py override this with an absolute path; the node
+      # creates the directory tree if it does not exist.
+      outputfilepath: "output"
+      model: "Pinhole"
+      width: 2448
+      height: 2048
+      scale: 0.5
+      fx: 2340.84038885597
+      fy: 2343.90144344669
+      cx: 1212.60625557832
+      cy: 1040.13711412500
+      d0: -0.0484912635635976
+      d1: 0.0932898652373741
+      d2: 0.000399426275334593
+      d3: 0.000470330631945937
+
+    common:
+      img_topic: "/left_camera/image"
+      lid_topic: "/livox/lidar"
+      imu_topic: "/livox/imu"
+      img_en: 1
+      lidar_en: 1
+      ros_driver_bug_fix: false
+      # "reliable" matches `ros2 bag play`; use "sensor_data" for live drivers.
+      sensor_qos: "reliable"
+
+    extrin_calib:
+      extrinsic_T: [0.04165, 0.02326, -0.0284]
+      extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+      Rcl: [-0.010986, -0.999937, 0.002338,
+            -0.007770, -0.002253, -0.999967,
+            0.999909, -0.011004, -0.007745]
+      Pcl: [-0.061281, 0.036577, -0.038252]
+
+    time_offset:
+      imu_time_offset: 0.0
+      img_time_offset: 0.1
+      exposure_time_init: 0.0
+
+    preprocess:
+      point_filter_num: 1
+      filter_size_surf: 0.1
+      lidar_type: 1   # Livox Avia LiDAR
+      scan_line: 6
+      blind: 0.8
+
+    vio:
+      max_iterations: 5
+      outlier_threshold: 1000.0
+      img_point_cov: 1000.0
+      patch_size: 8
+      patch_pyrimid_level: 4
+      normal_en: true
+      raycast_en: false
+      inverse_composition_en: false
+      exposure_estimate_en: true
+      inv_expo_cov: 0.1
+
+    imu:
+      imu_en: true
+      imu_int_frame: 30
+      acc_cov: 0.05
+      gyr_cov: 0.03
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      ba_bg_est_en: true
+
+    lio:
+      max_iterations: 5
+      dept_err: 0.02
+      beam_err: 0.05
+      min_eigen_value: 0.0025
+      voxel_size: 0.5
+      max_layer: 2
+      max_points_num: 50
+      layer_init_num: [5, 5, 5, 5, 5]
+
+    local_map:
+      map_sliding_en: false
+      half_map_size: 100
+      sliding_thresh: 8.0
+
+    uav:
+      imu_rate_odom: false
+      gravity_align_en: false
+
+    publish:
+      dense_map_en: true
+      pub_effect_point_en: false
+      pub_plane_en: false
+      pub_scan_num: 1
+      blind_rgb_points: 0.0
+
+    evo:
+      seq_name: "Grass01"
+      pose_output_en: true
+
+    pcd_save:
+      pcd_save_en: false
+      colmap_output_en: false
+      filter_size_pcd: 0.15
+      interval: -1
+
+    gps:
+      gps_en: true
+      debug_mode: false
+      gps_time_offset: 0.0
+      extrinsic_T: [0.0, 0.0, 0.0]
+      gps_topic: "/ublox_driver/receiver_pvt"
+
+    opt:
+      load_data: false
+      rtk_cov: 0.01
+      livo2_RPY_cov: 0.00000001
+      livo2_XYZ_cov: 0.001

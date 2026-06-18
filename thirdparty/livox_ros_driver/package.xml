@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>livox_ros_driver</name>
+  <version>1.0.0</version>
+  <description>
+    Minimal ROS 2 interface package providing the Livox CustomMsg / CustomPoint
+    message types used by FAST-LIVO2. Field layout matches the original ROS 1
+    livox_ros_driver messages so converted rosbags
+    (livox_ros_driver/msg/CustomMsg) play back directly.
+  </description>
+  <maintainer email="dev@livoxtech.com">Livox</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>std_msgs</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

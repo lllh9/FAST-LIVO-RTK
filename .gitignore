@@ -1,0 +1,26 @@
+# --- colcon / ament build artifacts ---
+/build/
+/install/
+/log/
+**/__pycache__/
+
+# --- rosbags ---
+bags/
+*.bag
+*.db3
+*.mcap
+
+# --- runtime outputs (keep the directory skeleton via .gitkeep) ---
+src/fast_livo/output/**
+src/fast_livo/Log/**
+!src/fast_livo/output/**/
+!src/fast_livo/Log/**/
+!**/.gitkeep
+
+# point clouds / generated trajectories
+*.pcd
+
+# --- editor / OS cruft ---
+.vscode/
+*.swp
+.DS_Store

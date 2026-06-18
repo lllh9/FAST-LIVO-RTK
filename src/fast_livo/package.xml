@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>fast_livo</name>
+  <version>2.0.0</version>
+  <description>
+    FAST-LIVO2-RTK: direct LiDAR-Inertial-Visual odometry with RTK/GNSS
+    constrained global optimization. ROS 2 (Humble) port of the ROS 1 package.
+  </description>
+  <maintainer email="zhengcr@connect.hku.hk">Chunran Zheng</maintainer>
+  <license>GPLv2</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+  <depend>pcl_conversions</depend>
+  <depend>pcl_ros</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>message_filters</depend>
+  <depend>livox_ros_driver</depend>
+  <depend>gnss_comm</depend>
+  <depend>vikit_common</depend>
+  <depend>vikit_ros</depend>
+
+  <!-- System (non-ROS) dependencies found via CMake find_package. -->
+  <depend>eigen</depend>
+  <depend>libpcl-all-dev</depend>
+  <depend>libopencv-dev</depend>
+  <depend>boost</depend>
+  <depend>geographiclib</depend>
+  <!-- Sophus (commit a621ff, non-templated) and GTSAM 4.2 have no standard
+       rosdep keys; they are built from source in the deps Docker image
+       (docker/scripts/build_sophus.sh, build_gtsam.sh). -->
+
+  <test_depend>ament_lint_auto</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

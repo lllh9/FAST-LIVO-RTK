@@ -1,0 +1,8 @@
+bags/
+**/build/
+**/install/
+**/log/
+output/
+**/output/
+.git/
+.gitignore

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gnss_comm</name>
+  <version>1.0.0</version>
+  <description>
+    Minimal ROS 2 interface package providing the gnss_comm GNSS PVT solution
+    messages used by FAST-LIVO2-RTK. Field layout matches the original
+    HKUST-Aerial-Robotics/gnss_comm ROS 1 messages so converted rosbags
+    (gnss_comm/msg/GnssPVTSolnMsg) play back directly.
+  </description>
+  <maintainer email="noreply@example.com">FAST-LIVO2-RTK ROS2 port</maintainer>
+  <license>GPLv3</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

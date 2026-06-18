@@ -1,0 +1,43 @@
+# FAST-LIVO2-RTK on ROS 2 Humble (Ubuntu 22.04) — DEPENDENCY image.
+#
+# This stage holds the expensive, stable, non-ament dependencies:
+#   ROS 2 Humble desktop-full (PCL, OpenCV/cv_bridge, tf2, image_transport,
+#   message_filters, pcl_ros, pcl_conversions) + Sophus(a621ff) + GTSAM 4.2 +
+#   GeographicLib. The colcon workspace (vikit, interface pkgs, fast_livo) is
+#   built on top of this image (see Dockerfile / docker/run.sh), so the
+#   workspace can be rebuilt without rebuilding GTSAM/Sophus.
+#
+# Build context = repo root.
+#   docker build -f docker/Dockerfile.deps -t fastlivo-rtk-ros2:deps .
+# ---------------------------------------------------------------------------
+FROM osrf/ros:humble-desktop-full AS deps
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-c"]
+
+# System dependencies. OpenCV/PCL/Eigen come from the ROS Humble base (the same
+# OpenCV 4.5 that cv_bridge links — do NOT build a parallel /usr/local OpenCV).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git cmake build-essential \
+      libeigen3-dev libpcl-dev libboost-all-dev \
+      libgoogle-glog-dev libgflags-dev \
+      libgeographic-dev geographiclib-tools \
+      libtbb-dev libomp-dev \
+      ros-humble-pcl-conversions ros-humble-pcl-ros \
+      ros-humble-tf2-eigen ros-humble-tf2-geometry-msgs \
+      ros-humble-cv-bridge ros-humble-image-transport \
+      python3-colcon-common-extensions \
+      vim less tmux \
+ && rm -rf /var/lib/apt/lists/*
+
+# Sophus (a621ff) — non-templated/double-only variant FAST-LIVO2 expects.
+COPY docker/scripts/build_sophus.sh /tmp/build_sophus.sh
+RUN bash /tmp/build_sophus.sh
+
+# GTSAM 4.2 — system Eigen, march-native off, TBB off (avoids Eigen ABI segfaults).
+COPY docker/scripts/build_gtsam.sh /tmp/build_gtsam.sh
+RUN bash /tmp/build_gtsam.sh
+
+RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc
+WORKDIR /root/ros2_ws
+CMD ["bash"]
