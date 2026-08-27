@@ -1,0 +1,25 @@
+<launch>
+    <!-- hc_topic_driver -->
+    <node pkg="chcnav" exec="HcCgiProtocolProcessNode" name="hc_topic_driver" output="screen"/>
+
+    <!-- tcp -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="tcp_7532" output="screen">
+        <!-- tcp settings -->
+        <param name="type" value="tcp"/>
+        <param name="rate" value="1000"/>           <!-- 节点每秒解析最大协议数量 -->
+        <param name="host" value="192.168.200.1"/>  <!-- ip 地址 -->
+        <param name="port" value="7532"/>           <!-- 端口号 -->
+        <!-- tcp settings end -->
+    </node>
+
+    <!-- c_rs232 -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="rs232" output="screen">
+        <!-- serial settings -->
+        <param name="type" value="serial"/>
+        <param name="rate" value="1000"/>         <!-- 节点每秒解析最大协议数量 -->
+        <param name="port" value="/dev/ttyUSB0"/> <!-- 串口路径 -->
+        <param name="baudrate" value="460800"/>      <!-- 波特率 -->
+        <!-- serial settings end -->
+    </node>  
+    
+</launch>

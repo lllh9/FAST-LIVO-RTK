@@ -543,131 +543,36 @@ void ImuProcess::UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_
 
 void ImuProcess::GetRTKCorrectedState(LidarMeasureGroup &lidar_meas, const StatesGroup &state_in, Sophus::SE3 T_G_to_W)
 {
-  StatesGroup state_temp = state_in;
-
+  (void)state_in;
   MeasureGroup &meas = lidar_meas.measures.back();
-  auto v_imu = meas.imu;
-  v_imu.push_front(last_imu); 
+  if (!meas.rtk.valid || meas.rtk.timestamp <= 0.001) return;
 
-  auto rtk_data = meas.rtk; 
-  double rtk_t = rtk_data.timestamp;
+  // ONLINE_RTK: Convert the antenna measurement and its covariance from local
+  // ENU into the fixed LIVO world frame.  The previous implementation created
+  // a temporary state, hard-overwrote position/velocity, and zeroed its
+  // covariance; that is not a Kalman measurement update.
+  const M3D R_G_to_W = T_G_to_W.rotation_matrix();
+  meas.rtk.p = T_G_to_W * meas.rtk.p;
+  meas.rtk.v = R_G_to_W * meas.rtk.v;
+  meas.rtk.position_cov = R_G_to_W * meas.rtk.position_cov * R_G_to_W.transpose();
 
-  if (meas.rtk.timestamp <= 0.001) 
-  {
-      return; 
-  }
-
-  ROS_INFO("[RTK Corrected State]");
-  ROS_INFO("[RTKCorrect] RTK_G.P: %.6f, %.6f, %.6f, RTK time: %.6f", rtk_data.p[0], rtk_data.p[1], rtk_data.p[2], rtk_t);
-  rtk_data.p = T_G_to_W * rtk_data.p;
-  rtk_data.v = T_G_to_W.rotation_matrix() * rtk_data.v;
-  ROS_INFO("[RTKCorrect] RTK_W_before.P: %.6f, %.6f, %.6f, RTK time: %.6f", rtk_data.p[0], rtk_data.p[1], rtk_data.p[2], rtk_t);
-  const double prop_beg_time = last_prop_end_time; 
   const double prop_end_time = lidar_meas.lio_vio_flg == LIO ? meas.lio_time : meas.vio_time;
-
-  V3D local_acc_last = acc_s_last;
-  V3D local_angvel_last = angvel_last;
-  
-  V3D acc_imu(local_acc_last), angvel_avr(local_angvel_last), acc_avr;
-  V3D vel_imu(state_temp.vel_end), pos_imu(state_temp.pos_end);
-  M3D R_imu(state_temp.rot_end);
-  
-  MD(DIM_STATE, DIM_STATE) F_x, cov_w; 
-
-  double dt = 0;
-  double current_prop_time = prop_beg_time;
-  int imu_idx = 0;
-
-  auto PropagateTo = [&](double target_time) 
+  const double dt = prop_end_time - meas.rtk.timestamp;
+  if (dt < -1e-3 || dt > 0.5)
   {
-      while (imu_idx < v_imu.size() - 1) 
-      {
-          auto head = v_imu[imu_idx];
-          auto tail = v_imu[imu_idx + 1];
-          
-          if (toSec(tail->header.stamp) < current_prop_time) {
-              imu_idx++; continue;
-          }
-
-          double tail_t = toSec(tail->header.stamp);
-          double end_t = (tail_t > target_time) ? target_time : tail_t;
-          
-          dt = end_t - current_prop_time;
-          if (dt <= 1e-7) {
-              if (tail_t <= target_time) imu_idx++;
-              if (std::abs(end_t - target_time) < 1e-7) break;
-              continue;
-          }
-
-          angvel_avr << 0.5 * (head->angular_velocity.x + tail->angular_velocity.x), 
-                        0.5 * (head->angular_velocity.y + tail->angular_velocity.y),
-                        0.5 * (head->angular_velocity.z + tail->angular_velocity.z);
-          acc_avr << 0.5 * (head->linear_acceleration.x + tail->linear_acceleration.x), 
-                     0.5 * (head->linear_acceleration.y + tail->linear_acceleration.y),
-                     0.5 * (head->linear_acceleration.z + tail->linear_acceleration.z);
-          
-          angvel_avr -= state_temp.bias_g;
-          acc_avr = acc_avr * G_m_s2 / mean_acc.norm() - state_temp.bias_a;
-
-          M3D acc_avr_skew; M3D Exp_f = Exp(angvel_avr, dt);
-          acc_avr_skew << SKEW_SYM_MATRX(acc_avr);
-
-          F_x.setIdentity(); cov_w.setZero();
-          F_x.block<3, 3>(0, 0) = Exp(angvel_avr, -dt);
-          F_x.block<3, 3>(3, 7) = Eye3d * dt;
-          F_x.block<3, 3>(7, 0) = -R_imu * acc_avr_skew * dt;
-          if (exposure_estimate_en) cov_w(6, 6) = cov_inv_expo * dt * dt;
-          cov_w.block<3, 3>(0, 0).diagonal() = cov_gyr * dt * dt;
-          cov_w.block<3, 3>(7, 7) = R_imu * cov_acc.asDiagonal() * R_imu.transpose() * dt * dt;
-          cov_w.block<3, 3>(10, 10).diagonal() = cov_bias_gyr * dt * dt;
-          cov_w.block<3, 3>(13, 13).diagonal() = cov_bias_acc * dt * dt;
-          
-          state_temp.cov = F_x * state_temp.cov * F_x.transpose() + cov_w;
-
-          // --- 状态更新 ---
-          R_imu = R_imu * Exp_f;
-          acc_imu = R_imu * acc_avr + state_temp.gravity;
-          pos_imu = pos_imu + vel_imu * dt + 0.5 * acc_imu * dt * dt;
-          vel_imu = vel_imu + acc_imu * dt;
-
-          state_temp.rot_end = R_imu; 
-          state_temp.pos_end = pos_imu;
-          state_temp.vel_end = vel_imu;
-          
-          local_angvel_last = angvel_avr;
-          local_acc_last = acc_imu;
-
-          current_prop_time = end_t;
-          
-          if (std::abs(end_t - target_time) < 1e-7) break;
-          imu_idx++; 
-      }
-  };
-
-  ROS_INFO("[RTKCorrect] RTK time: %.6f, Propagation beg time: %.6f, end time: %.6f", rtk_t, prop_beg_time, prop_end_time);
-  if (rtk_t > prop_beg_time && rtk_t <= prop_end_time)
-  {
-      PropagateTo(rtk_t);
-
-      state_temp.pos_end = rtk_data.p;
-      state_temp.vel_end = rtk_data.v;
-      pos_imu = state_temp.pos_end; 
-
-      state_temp.cov.setZero();
-
-      PropagateTo(prop_end_time);
-  }
-  else
-  {
-      PropagateTo(prop_end_time);
+    // A future or stale observation indicates a timestamp/configuration error;
+    // do not let it deform the online voxel map.
+    meas.rtk.valid = false;
+    return;
   }
 
-  meas.rtk.p[0] = state_temp.pos_end[0];
-  meas.rtk.p[1] = state_temp.pos_end[1];
-  meas.rtk.p[2] = state_temp.pos_end[2];
-
-  ROS_INFO("[RTKCorrect] RTK_W_after.P: %.6f, %.6f, %.6f, RTK time: %.6f", meas.rtk.p[0], meas.rtk.p[1], meas.rtk.p[2], rtk_t);
-  return ; 
+  // Bring the asynchronous RTK antenna position to the LIO update epoch.  At
+  // sub-100-ms latency the receiver velocity is a stable interpolation model;
+  // added process variance prevents over-confidence as latency increases.
+  meas.rtk.p += meas.rtk.v * dt;
+  const double extrapolation_std = 0.10 * std::abs(dt);  // 0.10 m/s velocity uncertainty
+  meas.rtk.position_cov.diagonal().array() += extrapolation_std * extrapolation_std;
+  meas.rtk.timestamp = prop_end_time;
 }
 
 void ImuProcess::Process2(LidarMeasureGroup &lidar_meas, StatesGroup &stat, PointCloudXYZI::Ptr cur_pcl_un_, Sophus::SE3 T_G_to_W)

@@ -1,0 +1,17 @@
+<launch>
+    <!-- hc_cgi_protocol_process_node -->
+    <node pkg="chcnav" exec="HcCgiProtocolProcessNode" name="hc_topic_driver" output="screen"/>
+    
+    <!-- hc_msg_parser_launch_node  -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="rs232" output="screen">   <!-- name命名不要用大写字母开头, 不要带特殊字符，如“_” -->
+        <!-- serial settings -->
+        <param name="type" value="serial"/>
+        <param name="rate" value="1000"/>         <!-- 节点每秒解析最大协议数量 -->
+        <param name="port" value="/dev/ttyUSB0"/> <!-- 串口路径 -->
+        <param name="baudrate" value="460800"/>      <!-- 波特率 -->
+        <!-- serial settings end -->
+    </node>  
+    
+    <node pkg="chcnav" exec="TimeUniformityNode" name="time_uniformity_node" output="screen"/>
+</launch>
+

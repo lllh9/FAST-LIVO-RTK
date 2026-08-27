@@ -71,7 +71,8 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
-find_package(livox_ros_driver REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(livox_ros_driver2 REQUIRED)
 find_package(gnss_comm REQUIRED)
 find_package(vikit_common REQUIRED)
 find_package(vikit_ros REQUIRED)
@@ -105,7 +106,8 @@ set(ament_dependencies
   tf2_ros
   tf2_geometry_msgs
   message_filters
-  livox_ros_driver
+  std_srvs
+  livox_ros_driver2
   gnss_comm
   vikit_common
   vikit_ros
@@ -127,7 +129,7 @@ add_library(lio src/voxel_map.cpp)
 add_library(pre src/preprocess.cpp)
 add_library(imu_proc src/IMU_Processing.cpp)
 add_library(laser_mapping src/LIVMapper.cpp)
-add_library(optimization src/optimization.cpp)
+add_library(optimization src/optimization.cpp src/global_esikf.cpp)
 
 set(FASTLIVO_LIBS vio lio pre imu_proc laser_mapping optimization)
 foreach(lib ${FASTLIVO_LIBS})

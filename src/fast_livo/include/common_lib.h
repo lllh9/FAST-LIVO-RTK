@@ -62,9 +62,14 @@ enum EKF_STATE
 
 struct RTK
 {
-    double timestamp;
-    V3D p;
-    V3D v;
+    // ONLINE_RTK: Keep the measurement quality with the sample.  The original
+    // implementation discarded h_acc/v_acc and consequently used a hard-coded
+    // 3 mm covariance in the front-end.
+    double timestamp = 0.0;
+    V3D p = V3D::Zero();
+    V3D v = V3D::Zero();
+    M3D position_cov = M3D::Identity();
+    bool valid = false;
 };
 
 struct MeasureGroup
@@ -78,7 +83,7 @@ struct MeasureGroup
   {
     vio_time = 0.0;
     lio_time = 0.0;
-    rtk.timestamp = 0.0;
+    rtk = RTK();
   };
 };
 

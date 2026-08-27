@@ -4,8 +4,8 @@
   <name>fast_livo</name>
   <version>2.0.0</version>
   <description>
-    FAST-LIVO2-RTK: direct LiDAR-Inertial-Visual odometry with RTK/GNSS
-    constrained global optimization. ROS 2 (Humble) port of the ROS 1 package.
+    FAST-LIVO2 high-rate local odometry with an asynchronous GTSAM iSAM2
+    backend for RTK, Scan Context/GICP loops, global localization and mapping.
   </description>
   <maintainer email="zhengcr@connect.hku.hk">Chunran Zheng</maintainer>
   <license>GPLv2</license>
@@ -26,7 +26,8 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>message_filters</depend>
-  <depend>livox_ros_driver</depend>
+  <depend>std_srvs</depend>
+  <depend>livox_ros_driver2</depend>
   <depend>gnss_comm</depend>
   <depend>vikit_common</depend>
   <depend>vikit_ros</depend>

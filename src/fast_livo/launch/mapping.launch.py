@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Launch FAST-LIVO2-RTK (ROS 2).
 
-Starts the `laserMapping` node with a parameter file (defaults to the
-HH-LVGO-01 config; pass `params_file:=.../AGV-LVGO.yaml` for the AGV dataset).
-RViz is optional (`rviz:=true`). Note the node's offline back-end blocks on
-stdin until you press Enter (after the bag finishes) — for fully headless runs
-use docker/run_demo.sh, which drives stdin via a FIFO.
+Starts the FAST-LIVO2 local front-end, independent real-time RTK/LIVO ESIKF and
+asynchronous GTSAM iSAM2 global back-end. RTK and Scan Context/GICP loop closures
+are optimized online; no stdin or Enter key is required. Call
+`/global_backend/save_map` to rebuild the final optimized map, or stop the node
+normally to save it automatically.
 """
 import os
 from ament_index_python.packages import get_package_share_directory

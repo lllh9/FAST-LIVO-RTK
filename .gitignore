@@ -4,6 +4,9 @@
 /log/
 **/__pycache__/
 
+# --- local migration archives / imported build trees ---
+/.artifacts/
+
 # --- rosbags ---
 bags/
 *.bag

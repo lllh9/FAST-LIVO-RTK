@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>chcnav_gnss_adapter</name>
+  <version>0.1.0</version>
+  <description>Convert CHCNAV PVT messages to FAST-LIVO2-RTK gnss_comm messages.</description>
+  <maintainer email="lh@example.com">lh</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>msg_interfaces</depend>
+  <depend>gnss_comm</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

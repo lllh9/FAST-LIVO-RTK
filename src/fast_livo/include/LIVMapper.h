@@ -22,6 +22,7 @@ which is included as part of this source code package.
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
@@ -61,11 +62,14 @@ public:
 
   void RGBpointBodyToWorld(PointType const *const pi, PointType *const po);
   void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg);
-  void livox_pcl_cbk(const livox_ros_driver::msg::CustomMsg::ConstSharedPtr &msg_in);
+  void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg_in);
   void imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in);
   void img_cbk(const sensor_msgs::msg::Image::ConstSharedPtr &msg_in);
   void rtk_cbk(const gnss_comm::msg::GnssPVTSolnMsg::ConstSharedPtr& gpsMsg);
-  void InitializeRTK();
+  void navsatfix_cbk(const sensor_msgs::msg::NavSatFix::ConstSharedPtr& gpsMsg);
+  // ONLINE_RTK: Returns true only after a well-supported LIVO<->ENU alignment
+  // has actually been computed.  Callers must not enable fusion on failure.
+  bool InitializeRTK();
   void publish_img_rgb(const image_transport::Publisher &pubImage, VIOManagerPtr vio_manager);
   void publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubLaserCloudFullRes, VIOManagerPtr vio_manager);
   void publish_visual_sub_map(const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pubSubVisualMap);
@@ -89,7 +93,7 @@ public:
   std::unordered_map<VOXEL_LOCATION, VoxelOctoTree *> voxel_map;
   
   string root_dir;
-  string lid_topic, imu_topic, seq_name, img_topic;
+  string lid_topic, imu_topic, seq_name, img_topic, gps_topic, gps_message_type;
   string sensor_qos_mode = "reliable";
   V3D extT;
   M3D extR;
@@ -187,6 +191,7 @@ public:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_img;
   rclcpp::Subscription<gnss_comm::msg::GnssPVTSolnMsg>::SharedPtr subGPS_pvt;
+  rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr subGPS_navsatfix;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFullRes;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubNormal;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubSubVisualMap;
@@ -216,6 +221,16 @@ public:
   Sophus::SE3 T_W_to_G;
   Sophus::SE3 T_G_to_W;
   vector<double> T_I_R;
+  // ONLINE_RTK: Front-end timing, quality gating and alignment parameters.
+  double gps_time_offset = 0.0;
+  double online_rtk_sync_threshold = 0.05;
+  double online_rtk_min_distance = 5.0;
+  double online_rtk_max_h_acc = 0.5;
+  double online_rtk_max_v_acc = 1.0;
+  double online_rtk_min_h_std = 0.02;
+  double online_rtk_min_v_std = 0.05;
+  double online_rtk_innovation_gate = 16.27;
+  int online_rtk_min_matches = 20;
 
   int pcd_file_index = 0;
   bool debug_mode = false;

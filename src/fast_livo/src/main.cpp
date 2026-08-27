@@ -15,13 +15,13 @@ int main(int argc, char **argv)
 
   image_transport::ImageTransport it(node);
 
-  // Front-end (ESIKF LIVO) and back-end (GTSAM/RTK batch optimizer) share one
-  // node and communicate in-process over topics, exactly as upstream.
+  // FAST-LIVO2 保持高频局部前端；GTSAM iSAM2 在独立线程执行 RTK、相对位姿
+  // 和 Scan Context/GICP 回环的在线全局优化，不会阻塞这里的前端循环。
   LIVMapper mapper(node);
   optimization opti(node);
 
   mapper.initializeSubscribersAndPublishers(it);
-  mapper.run();   // 5 kHz busy loop; spins the node via rclcpp::spin_some
+  mapper.run();   // 5 kHz 前端循环，同时用 spin_some 驱动轻量 ROS 回调。
 
   rclcpp::shutdown();
   return 0;

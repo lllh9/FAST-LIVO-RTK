@@ -342,7 +342,7 @@ VoxelOctoTree *VoxelOctoTree::Insert(const pointWithVar &pv)
   return nullptr;
 }
 
-void VoxelMapManager::StateEstimation(StatesGroup &state_propagat, bool rtk_good, V3D rtk_means)
+void VoxelMapManager::StateEstimation(StatesGroup &state_propagat, bool rtk_good, const RTK &rtk_measurement)
 {
   cross_mat_list_.clear();
   cross_mat_list_.reserve(feats_down_size_);
@@ -407,23 +407,48 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat, bool rtk_good
     {
       total_residual += fabs(ptpl_list_[i].dis_to_plane_);
     }
-    effct_feat_num_ = ptpl_list_.size();
+    const int lidar_effective_num = static_cast<int>(ptpl_list_.size());
+    effct_feat_num_ = lidar_effective_num;
     // cout << "[ LIO ] Raw feature num: " << feats_undistort_->size() << ", downsampled feature num:" << feats_down_size_ 
     //      << " effective feature num: " << effct_feat_num_ << " average residual: " << total_residual / effct_feat_num_ << endl;
 
     /*** Computation of Measuremnt Jacobian matrix H and measurents covarience
      * ***/
-    if(rtk_good)
+    // ONLINE_RTK: Gate the antenna observation before changing matrix sizes.
+    // This keeps a bad RTK fix out of both the state and the persistent map.
+    bool use_rtk = rtk_good && rtk_measurement.valid;
+    if (use_rtk)
     {
-      effct_feat_num_ += 3;
+      M3D lever_skew;
+      lever_skew << SKEW_SYM_MATRX(rtk_lever_arm_);
+      Eigen::Matrix<double, 3, 6> H_gate;
+      H_gate.block<3, 3>(0, 0) = -state_.rot_end * lever_skew;
+      H_gate.block<3, 3>(0, 3) = M3D::Identity();
+      const V3D predicted_antenna = state_.pos_end + state_.rot_end * rtk_lever_arm_;
+      const V3D innovation = rtk_measurement.p - predicted_antenna;
+      const M3D innovation_cov =
+          H_gate * state_.cov.block<6, 6>(0, 0) * H_gate.transpose() +
+          rtk_measurement.position_cov;
+      const double nis = innovation.dot(innovation_cov.ldlt().solve(innovation));
+      use_rtk = std::isfinite(nis) && nis <= rtk_innovation_gate_;
+      if (!use_rtk)
+      {
+        ROS_WARN("ONLINE_RTK: rejected position update (NIS %.3f > gate %.3f).",
+                 nis, rtk_innovation_gate_);
+      }
     }
+
+    effct_feat_num_ = lidar_effective_num + (use_rtk ? 3 : 0);
 
     MatrixXd Hsub(effct_feat_num_, 6);
     MatrixXd Hsub_T_R_inv(6, effct_feat_num_);
     VectorXd R_inv(effct_feat_num_);
     VectorXd meas_vec(effct_feat_num_);
     meas_vec.setZero();
-    for (int i = 0; i < effct_feat_num_; i++)
+    // ONLINE_RTK: Iterate only over actual LiDAR residuals.  The old code
+    // increased effct_feat_num_ by three first and indexed ptpl_list_ past its
+    // end whenever RTK was enabled.
+    for (int i = 0; i < lidar_effective_num; i++)
     {
       auto &ptpl = ptpl_list_[i];
       V3D point_this(ptpl.point_b_);
@@ -469,37 +494,29 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat, bool rtk_good
       meas_vec(i) = -ptpl_list_[i].dis_to_plane_;
     }
 
-    if (rtk_good)
+    if (use_rtk)
     {
         ROS_INFO("RTK update in EKF.");
         
-        int rtk_start_idx = effct_feat_num_ - 3;
-        
-         
-        V3D rtk_ext_t;  
-        //rtk_ext_t << -0.0588, 0.02316, 0.1162;
-        rtk_ext_t << 0, 0, 0;
-        V3D rtk_std;    
-        rtk_std << 0.003, 0.003, 0.1; 
-
-        V3D rtk_est = state_.pos_end + state_.rot_end * rtk_ext_t;
-        V3D rtk_residual = rtk_means - rtk_est; 
+        const int rtk_start_idx = lidar_effective_num;
+        const V3D rtk_est = state_.pos_end + state_.rot_end * rtk_lever_arm_;
+        const V3D rtk_residual = rtk_measurement.p - rtk_est;
         ROS_INFO("rtk_residual: [%f, %f, %f]", rtk_residual[0], rtk_residual[1], rtk_residual[2]);
 
-        // H_RTK 计算
+        // ONLINE_RTK: The antenna lever arm makes RTK position sensitive to
+        // attitude as well as IMU position.
         M3D rtk_ext_t_skew;
-        rtk_ext_t_skew << SKEW_SYM_MATRX(rtk_ext_t);
-        //M3D rtk_rot_jacobian = -state_.rot_end * rtk_ext_t_skew; 
-        M3D rtk_rot_jacobian;
-        rtk_rot_jacobian.setZero();
-
-        M3D rtk_pos_jacobian = M3D::Identity();
+        rtk_ext_t_skew << SKEW_SYM_MATRX(rtk_lever_arm_);
+        const M3D rtk_rot_jacobian = -state_.rot_end * rtk_ext_t_skew;
+        const M3D rtk_pos_jacobian = M3D::Identity();
 
         for (int k = 0; k < 3; k++)
         {
             int row_idx = rtk_start_idx + k;
 
-            double curr_rtk_cov = rtk_std[k] * rtk_std[k]; 
+            // The current ESIKF formulation stores scalar inverse variances per
+            // residual row, so use the rotated covariance diagonal here.
+            const double curr_rtk_cov = std::max(rtk_measurement.position_cov(k, k), 1e-6);
             R_inv(row_idx) = 1.0 / curr_rtk_cov;
 
             //H_sub , H_T_R_inv, meas_vec 计算

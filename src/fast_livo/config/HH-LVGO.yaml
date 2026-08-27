@@ -119,13 +119,69 @@
 
     gps:
       gps_en: true
+      # 关闭旧前端 RTK 更新，保证输出给全局 ESIKF/GTSAM 的仍是纯 LIVO。
+      frontend_fusion_en: false
       debug_mode: false
+      # Supported values: "pvt" (gnss_comm/GnssPVTSolnMsg) and
+      # "navsatfix" (sensor_msgs/NavSatFix).
+      message_type: "navsatfix"
       gps_time_offset: 0.0
+      # ONLINE_RTK: parameters used only by the real-time front-end fusion.
+      online_sync_threshold: 0.05
+      online_min_matches: 20
+      online_min_distance: 5.0
+      online_max_h_acc: 0.5
+      online_max_v_acc: 1.0
+      online_min_h_std: 0.02
+      online_min_v_std: 0.05
+      online_innovation_gate: 16.27
       extrinsic_T: [0.0, 0.0, 0.0]
-      gps_topic: "/ublox_driver/receiver_pvt"
+      gps_topic: "/sensing/gnss/ublox/nav_sat_fix"
 
-    opt:
-      load_data: false
-      rtk_cov: 0.01
-      livo2_RPY_cov: 0.00000001
-      livo2_XYZ_cov: 0.001
+    realtime_esikf:
+      # NavSatFix 只更新位置；速度和航向更新会自动保持关闭。
+      enabled: true
+      rotation_process_variance: 0.000025
+      position_process_variance: 0.0025
+      velocity_process_variance: 0.025
+      position_nis_gate: 16.27
+      velocity_nis_gate: 16.27
+      heading_nis_gate: 9.0
+      heading_offset_deg: 0.0
+
+    backend:
+      # 关键帧满足任一平移、转角或时间阈值时进入 iSAM2。
+      keyframe_distance: 0.5
+      keyframe_angle: 0.10
+      keyframe_time: 1.0
+      keyframe_sync_tolerance: 0.03
+      max_pending_keyframes: 30
+      # FAST-LIVO2 相邻关键帧 BetweenFactor 的旋转/平移方差。
+      odom_rotation_variance: 0.00001
+      odom_translation_variance: 0.001
+      # RTK 与关键帧时间匹配及接收机精度门限。
+      rtk_sync_tolerance: 0.10
+      rtk_max_horizontal_std: 0.50
+      rtk_max_vertical_std: 1.00
+      # Scan Context 粗检索参数。
+      loop_enabled: true
+      sc_rings: 20
+      sc_sectors: 60
+      sc_max_radius: 80.0
+      sc_sensor_height: 2.0
+      sc_exclude_recent: 30
+      sc_distance_threshold: 0.18
+      # GICP 几何验证：体素、对应距离、收敛门限和局部协方差邻域。
+      gicp_voxel_size: 0.30
+      gicp_max_correspondence: 2.0
+      gicp_fitness_threshold: 0.30
+      gicp_max_iterations: 50
+      gicp_correspondence_randomness: 20
+      gicp_transformation_epsilon: 0.000001
+      gicp_rotation_epsilon: 0.000001
+      # 通过 GICP 验证后加入的回环 BetweenFactor 方差。
+      loop_rotation_variance: 0.001
+      loop_translation_variance: 0.05
+      # map→camera_init 的 SE(3) 平滑系数及最终地图体素尺寸。
+      correction_smoothing_alpha: 0.05
+      map_voxel_size: 0.10

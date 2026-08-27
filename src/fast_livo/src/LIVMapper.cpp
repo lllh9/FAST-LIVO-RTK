@@ -60,6 +60,8 @@ void LIVMapper::readParameters()
   fastlivo_compat::get_param<int>(node_, "common/img_en", img_en, 1);
   fastlivo_compat::get_param<int>(node_, "common/lidar_en", lidar_en, 1);
   fastlivo_compat::get_param<string>(node_, "common/img_topic", img_topic, "/left_camera/image");
+  fastlivo_compat::get_param<string>(node_, "gps/gps_topic", gps_topic, "/ublox_driver/receiver_pvt");
+  fastlivo_compat::get_param<string>(node_, "gps/message_type", gps_message_type, "pvt");
   // QoS for the sensor inputs: "reliable" (default, matches `ros2 bag play`) or
   // "sensor_data"/"best_effort" (matches typical live Livox/IMU/camera drivers).
   fastlivo_compat::get_param<string>(node_, "common/sensor_qos", sensor_qos_mode, std::string("reliable"));
@@ -120,7 +122,18 @@ void LIVMapper::readParameters()
   fastlivo_compat::get_param<bool>(node_, "gps/debug_mode", debug_mode, false);
   p_pre->blind_sqr = p_pre->blind * p_pre->blind;
 
-  //fastlivo_compat::get_param<bool>(node_, "gps/gps_en", rtk_en, false);
+  // 旧 RTK 更新默认关闭；RTK 由独立全局 ESIKF 和 GTSAM 后端各自消费纯 LIVO。
+  // 若需要诊断旧版前端 RTK 路径，可显式设置 gps/frontend_fusion_en=true。
+  fastlivo_compat::get_param<bool>(node_, "gps/frontend_fusion_en", rtk_en, false);
+  fastlivo_compat::get_param<double>(node_, "gps/gps_time_offset", gps_time_offset, 0.0);
+  fastlivo_compat::get_param<double>(node_, "gps/online_sync_threshold", online_rtk_sync_threshold, 0.05);
+  fastlivo_compat::get_param<double>(node_, "gps/online_min_distance", online_rtk_min_distance, 5.0);
+  fastlivo_compat::get_param<int>(node_, "gps/online_min_matches", online_rtk_min_matches, 20);
+  fastlivo_compat::get_param<double>(node_, "gps/online_max_h_acc", online_rtk_max_h_acc, 0.5);
+  fastlivo_compat::get_param<double>(node_, "gps/online_max_v_acc", online_rtk_max_v_acc, 1.0);
+  fastlivo_compat::get_param<double>(node_, "gps/online_min_h_std", online_rtk_min_h_std, 0.02);
+  fastlivo_compat::get_param<double>(node_, "gps/online_min_v_std", online_rtk_min_v_std, 0.05);
+  fastlivo_compat::get_param<double>(node_, "gps/online_innovation_gate", online_rtk_innovation_gate, 16.27);
   fastlivo_compat::get_param<vector<double>>(node_, "gps/extrinsic_T", T_I_R, vector<double>());
   fastlivo_compat::get_param<std::string>(node_, "laserMapping/outputfilepath", save_directory, "output");
   pcd_save_file = save_directory + "/debug/pcd/";
@@ -138,6 +151,18 @@ void LIVMapper::initializeComponents()
 
   voxelmap_manager->extT_ << VEC_FROM_ARRAY(extrinT);
   voxelmap_manager->extR_ << MAT_FROM_ARRAY(extrinR);
+
+  // ONLINE_RTK: Pass the surveyed IMU-to-antenna lever arm and innovation gate
+  // to the joint LiDAR/RTK ESIKF measurement update.
+  if (T_I_R.size() >= 3)
+  {
+    voxelmap_manager->rtk_lever_arm_ << T_I_R[0], T_I_R[1], T_I_R[2];
+  }
+  else if (rtk_en)
+  {
+    ROS_WARN("gps/extrinsic_T is missing; online RTK uses a zero lever arm.");
+  }
+  voxelmap_manager->rtk_innovation_gate_ = online_rtk_innovation_gate;
 
   if (!vk::camera_loader::loadFromRosNs(node_, "laserMapping", vio_manager->cam)) throw std::runtime_error("Camera model not correctly specified.");
 
@@ -232,7 +257,7 @@ void LIVMapper::initializeSubscribersAndPublishers(image_transport::ImageTranspo
   auto qos_imu   = best_effort ? rclcpp::SensorDataQoS() : rclcpp::QoS(rclcpp::KeepLast(20000));
   auto qos_img   = best_effort ? rclcpp::SensorDataQoS() : rclcpp::QoS(rclcpp::KeepLast(2000));
   if (p_pre->lidar_type == AVIA)
-    sub_pcl = node_->create_subscription<livox_ros_driver::msg::CustomMsg>(
+    sub_pcl = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
         lid_topic, qos_lidar,
         std::bind(&LIVMapper::livox_pcl_cbk, this, _1));
   else
@@ -246,9 +271,18 @@ void LIVMapper::initializeSubscribersAndPublishers(image_transport::ImageTranspo
       img_topic, qos_img,
       std::bind(&LIVMapper::img_cbk, this, _1));
 
-  subGPS_pvt = node_->create_subscription<gnss_comm::msg::GnssPVTSolnMsg>(
-      "/ublox_driver/receiver_pvt", rclcpp::QoS(rclcpp::KeepLast(2000)),
-      std::bind(&LIVMapper::rtk_cbk, this, _1));
+  // 纯 LIVO 模式不再重复执行旧前端 RTK 回调；debug_mode 可保留原始 RTK 诊断输出。
+  if (rtk_en || debug_mode) {
+    if (gps_message_type == "navsatfix") {
+      subGPS_navsatfix = node_->create_subscription<sensor_msgs::msg::NavSatFix>(
+          gps_topic, rclcpp::QoS(rclcpp::KeepLast(2000)),
+          std::bind(&LIVMapper::navsatfix_cbk, this, _1));
+    } else {
+      subGPS_pvt = node_->create_subscription<gnss_comm::msg::GnssPVTSolnMsg>(
+          gps_topic, rclcpp::QoS(rclcpp::KeepLast(2000)),
+          std::bind(&LIVMapper::rtk_cbk, this, _1));
+    }
+  }
 
   pub_odom = node_->create_publisher<nav_msgs::msg::Odometry>("/odometry/fast_livo2", rclcpp::QoS(rclcpp::KeepLast(10000)));
   pub_lidarRGB = node_->create_publisher<sensor_msgs::msg::PointCloud2>("/synced_cloud", rclcpp::QoS(rclcpp::KeepLast(10000)));
@@ -494,8 +528,8 @@ void LIVMapper::handleLIO()
 
   double t1 = omp_get_wtime();
 
-  V3D rtk_data = LidarMeasures.measures.back().rtk.p; 
-  if(rtk_ini && LidarMeasures.measures.back().rtk.timestamp > 0.00001)
+  const RTK &rtk_data = LidarMeasures.measures.back().rtk;
+  if(rtk_ini && rtk_data.valid && rtk_data.timestamp > 0.00001)
   {
     rtk_good = true;
   }
@@ -504,7 +538,7 @@ void LIVMapper::handleLIO()
     rtk_good = false;
   }
   
-  ROS_INFO("[HandleLIO] RTW_W: [%f, %f, %f]", rtk_data(0), rtk_data(1), rtk_data(2));
+  ROS_INFO("[HandleLIO] RTK_W: [%f, %f, %f]", rtk_data.p(0), rtk_data.p(1), rtk_data.p(2));
   voxelmap_manager->StateEstimation(state_propagat, rtk_good, rtk_data);
   _state = voxelmap_manager->state_;
   _pv_list = voxelmap_manager->pv_list_;
@@ -849,11 +883,11 @@ void LIVMapper::standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::ConstShare
   sig_buffer.notify_all();
 }
 
-void LIVMapper::livox_pcl_cbk(const livox_ros_driver::msg::CustomMsg::ConstSharedPtr &msg_in)
+void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::ConstSharedPtr &msg_in)
 {
   if (!lidar_en) return;
   mtx_buffer.lock();
-  livox_ros_driver::msg::CustomMsg::SharedPtr msg(new livox_ros_driver::msg::CustomMsg(*msg_in));
+  livox_ros_driver2::msg::CustomMsg::SharedPtr msg(new livox_ros_driver2::msg::CustomMsg(*msg_in));
   // if (toSec((abs(msg->header.stamp) - last_timestamp_lidar) > 0.2 && last_timestamp_lidar > 0) || sync_jump_flag)
   // {
   //   ROS_WARN("lidar jumps %.3f\n", toSec(msg->header.stamp) - last_timestamp_lidar);
@@ -921,24 +955,33 @@ void LIVMapper::rtk_cbk(const gnss_comm::msg::GnssPVTSolnMsg::ConstSharedPtr& gp
     gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
 
     RTK rtk_data;
-    rtk_data.timestamp = stamp.toSec() - 0.001;
+    // ONLINE_RTK: Use the configured offset instead of the former hard-coded
+    // -1 ms correction, and retain receiver-reported measurement quality.
+    rtk_data.timestamp = stamp.toSec() - gps_time_offset;
     rtk_data.p[0] = trans_local_[0];
     rtk_data.p[1] = trans_local_[1];
     rtk_data.p[2] = trans_local_[2];
     rtk_data.v[0] = gpsMsg->vel_e;
     rtk_data.v[1] = gpsMsg->vel_n;
     rtk_data.v[2] = -gpsMsg->vel_d;
-    
-    rtk_buffer.push_back(rtk_data);
-    ROS_INFO("rtk_data_pushed: %.6f, %.3f, %.3f, %.3f", rtk_data.timestamp, rtk_data.p[0], rtk_data.p[1], rtk_data.p[2]);
+    const double h_std = std::max(gpsMsg->h_acc, online_rtk_min_h_std);
+    const double v_std = std::max(gpsMsg->v_acc, online_rtk_min_v_std);
+    rtk_data.position_cov = (V3D(h_std * h_std, h_std * h_std, v_std * v_std)).asDiagonal();
+    rtk_data.valid = gpsMsg->valid_fix && gpsMsg->diff_soln && gpsMsg->carr_soln == 2 &&
+                     std::isfinite(gpsMsg->h_acc) && std::isfinite(gpsMsg->v_acc) &&
+                     gpsMsg->h_acc <= online_rtk_max_h_acc && gpsMsg->v_acc <= online_rtk_max_v_acc;
 
-
-    if(trans_local_.norm() > 50.0 && rtk_ini == false && rtk_en == true)
+    if (rtk_en && rtk_data.valid)
     {
-      ROS_INFO("Start INIT RTK to LIVO TRANSFORMATION");
-      InitializeRTK();
-      ROS_INFO("RTK to LIVO TRANSFORMATION INITIALIZED");
-      rtk_ini = true;
+      rtk_buffer.push_back(rtk_data);
+      // ONLINE_RTK: Bound pre-initialization storage during long stationary
+      // periods or poor-motion data collection.
+      while (rtk_buffer.size() > 5000) rtk_buffer.pop_front();
+      if (!rtk_ini && InitializeRTK())
+      {
+        rtk_ini = true;
+        ROS_INFO("ONLINE_RTK: RTK-to-LIVO transformation initialized; front-end fusion enabled.");
+      }
     }
 
     // if(rtk_ini)
@@ -981,6 +1024,60 @@ void LIVMapper::rtk_cbk(const gnss_comm::msg::GnssPVTSolnMsg::ConstSharedPtr& gp
   }
 }
 
+void LIVMapper::navsatfix_cbk(const sensor_msgs::msg::NavSatFix::ConstSharedPtr& gpsMsg)
+{
+  if (gpsMsg->status.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX ||
+      !std::isfinite(gpsMsg->latitude) || !std::isfinite(gpsMsg->longitude) ||
+      !std::isfinite(gpsMsg->altitude)) {
+    ROS_WARN("Ignoring invalid NavSatFix message");
+    return;
+  }
+
+  Eigen::Vector3d trans_local;
+  static bool first_gps = true;
+  if (first_gps) {
+    first_gps = false;
+    gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
+  }
+  gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude,
+                     trans_local.x(), trans_local.y(), trans_local.z());
+
+  const double stamp = rclcpp::Time(gpsMsg->header.stamp).seconds();
+  RTK rtk_data;
+  // ONLINE_RTK: NavSatFix already carries Unix/ROS time; apply the same
+  // configurable sensor offset as the PVT input path.
+  rtk_data.timestamp = stamp - gps_time_offset;
+  rtk_data.p = trans_local;
+  rtk_data.v.setZero();
+  const double x_std = std::sqrt(std::max(gpsMsg->position_covariance[0], online_rtk_min_h_std * online_rtk_min_h_std));
+  const double y_std = std::sqrt(std::max(gpsMsg->position_covariance[4], online_rtk_min_h_std * online_rtk_min_h_std));
+  const double z_std = std::sqrt(std::max(gpsMsg->position_covariance[8], online_rtk_min_v_std * online_rtk_min_v_std));
+  rtk_data.position_cov = (V3D(x_std * x_std, y_std * y_std, z_std * z_std)).asDiagonal();
+  rtk_data.valid = x_std <= online_rtk_max_h_acc && y_std <= online_rtk_max_h_acc &&
+                   z_std <= online_rtk_max_v_acc;
+
+  if (rtk_en && rtk_data.valid) {
+    rtk_buffer.push_back(rtk_data);
+    while (rtk_buffer.size() > 5000) rtk_buffer.pop_front();
+    if (!rtk_ini && InitializeRTK()) {
+      rtk_ini = true;
+      ROS_INFO("ONLINE_RTK: RTK-to-LIVO transformation initialized; front-end fusion enabled.");
+    }
+  }
+
+  nav_msgs::msg::Odometry gps_odom;
+  gps_odom.header = gpsMsg->header;
+  gps_odom.header.frame_id = "camera_init";
+  gps_odom.pose.pose.position.x = trans_local.x();
+  gps_odom.pose.pose.position.y = trans_local.y();
+  gps_odom.pose.pose.position.z = trans_local.z();
+  gps_odom.pose.pose.orientation.w = 1.0;
+  gps_odom.pose.covariance[0] = gpsMsg->position_covariance[0];
+  gps_odom.pose.covariance[7] = gpsMsg->position_covariance[4];
+  gps_odom.pose.covariance[14] = gpsMsg->position_covariance[8];
+  pub_rtk->publish(gps_odom);
+}
+
 Sophus::SE3 computeSVD(const std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>>& target, 
     const std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>>& source)
 {
@@ -1011,9 +1108,16 @@ Sophus::SE3 computeSVD(const std::vector<Eigen::Vector3d, Eigen::aligned_allocat
     return Sophus::SE3(Sophus::SO3(R), t);
 }
 
-void LIVMapper::InitializeRTK()
+bool LIVMapper::InitializeRTK()
 {
-    const double time_sync_threshold = 0.05;   
+    // ONLINE_RTK: Initialization is attempted incrementally, but fusion is not
+    // enabled until enough time-matched samples and translational excitation
+    // are present.  This prevents the old "warn then initialize anyway" path.
+    if (rtk_buffer.size() < static_cast<size_t>(online_rtk_min_matches) ||
+        livo_state_buffer.size() < static_cast<size_t>(online_rtk_min_matches))
+    {
+        return false;
+    }
 
     std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> pts_source_livo; // Source
     std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> pts_target_rtk;  // Target
@@ -1025,7 +1129,7 @@ void LIVMapper::InitializeRTK()
         while (livo_it != livo_state_buffer.end())
         {
             double t_livo = (*livo_it)[0]; 
-            if (t_livo < t_rtk - time_sync_threshold) {
+            if (t_livo < t_rtk - online_rtk_sync_threshold) {
                 livo_it++;
             } else {
                 break;
@@ -1048,23 +1152,41 @@ void LIVMapper::InitializeRTK()
             }
         }
 
-        if (min_dt < time_sync_threshold)
+        if (min_dt < online_rtk_sync_threshold)
         {
-          if (best_it->size() < 4) {
-                ROS_ERROR("LIVO buffer data size is too small (%lu < 4)! Check data collection.", best_it->size());
-            }
+          if (best_it->size() < 4) continue;
             pts_target_rtk.push_back(rtk_data.p);
             Eigen::Vector3d p_livo((*best_it)[1], (*best_it)[2], (*best_it)[3]);
             pts_source_livo.push_back(p_livo);
         }
     }
 
-    if (pts_target_rtk.size() < 3) {
-        ROS_WARN("Not enough matched points for RTK initialization (found %lu). Waiting for more data...", pts_target_rtk.size());
+    if (pts_target_rtk.size() < static_cast<size_t>(online_rtk_min_matches)) {
+        return false;
     }
-    ROS_INFO("pts_target_rtk size: %lu, pts_source_livo size: %lu", pts_target_rtk.size(), pts_source_livo.size());
+
+    double max_baseline = 0.0;
+    for (const auto &p : pts_source_livo)
+    {
+      max_baseline = std::max(max_baseline, (p - pts_source_livo.front()).norm());
+    }
+    if (max_baseline < online_rtk_min_distance)
+    {
+      return false;
+    }
+
     T_W_to_G = computeSVD(pts_target_rtk, pts_source_livo);
     T_G_to_W = T_W_to_G.inverse();
+    const Eigen::Matrix4d transform = T_W_to_G.matrix();
+    if (!transform.allFinite())
+    {
+      ROS_ERROR("ONLINE_RTK: non-finite RTK-to-LIVO initialization result rejected.");
+      return false;
+    }
+
+    ROS_INFO("ONLINE_RTK: initialized from %zu matches, LIVO baseline %.2f m.",
+             pts_target_rtk.size(), max_baseline);
+    return true;
 }
 
 void LIVMapper::imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr &msg_in)
@@ -1313,21 +1435,22 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
       // printf("[ Data Cut ] LIO \n");
       // printf("[ Data Cut ] img_capture_time: %lf \n", img_capture_time);
       m.imu.clear();
-      m.rtk.timestamp = 0.0;
-      m.rtk.p = Eigen::Vector3d::Zero();
+      m.rtk = RTK();
       m.lio_time = img_capture_time;
       mtx_buffer.lock();
 
       if (rtk_en && rtk_ini)
       {
+          // ONLINE_RTK: Consume the entire interval and retain its newest
+          // valid sample.  CGI-430 may publish faster than the 10 Hz LIO cycle;
+          // the old early break kept the oldest sample and increased latency.
           while (!rtk_buffer.empty())
           {
             ROS_INFO("[SyncRTK] RTK_buffer front time: %.6f, last_lio_update_time: %.6f, lio_time: %.6f", rtk_buffer.front().timestamp, meas.last_lio_update_time, m.lio_time);
             if (rtk_buffer.front().timestamp > m.lio_time) break;
-            if (rtk_buffer.front().timestamp > meas.last_lio_update_time) 
+            if (rtk_buffer.front().timestamp > meas.last_lio_update_time && rtk_buffer.front().valid)
             {
                 m.rtk = rtk_buffer.front();
-                break;
             }
             rtk_buffer.pop_front();
           }
@@ -1615,12 +1738,24 @@ void LIVMapper::publish_frame_world(const rclcpp::Publisher<sensor_msgs::msg::Po
   }
 
   
-  std::vector<double> livo_xyz(4);
-  livo_xyz[0] = keyframe_time;
-  livo_xyz[1] = _state.pos_end(0);
-  livo_xyz[2] = _state.pos_end(1);
-  livo_xyz[3] = _state.pos_end(2);
-  livo_state_buffer.push_back(livo_xyz);
+  if (rtk_en && !rtk_ini)
+  {
+    // ONLINE_RTK: Align like with like: RTK reports the antenna position, so
+    // the LIVO initialization trajectory must also be the predicted antenna
+    // trajectory.  Aligning IMU positions here and then applying the lever arm
+    // again in StateEstimation creates a constant bias (and usually causes the
+    // NIS gate to reject every online RTK update). Keep only initialization
+    // samples; after alignment this buffer is no longer needed.
+    const V3D livo_antenna =
+        _state.pos_end + _state.rot_end * voxelmap_manager->rtk_lever_arm_;
+    std::vector<double> livo_xyz(4);
+    livo_xyz[0] = keyframe_time;
+    livo_xyz[1] = livo_antenna(0);
+    livo_xyz[2] = livo_antenna(1);
+    livo_xyz[3] = livo_antenna(2);
+    livo_state_buffer.push_back(livo_xyz);
+    while (livo_state_buffer.size() > 5000) livo_state_buffer.pop_front();
+  }
 
 
   nav_msgs::msg::Odometry odom_msg_ekf;

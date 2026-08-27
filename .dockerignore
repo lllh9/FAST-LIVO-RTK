@@ -4,5 +4,6 @@ bags/
 **/log/
 output/
 **/output/
+.artifacts/
 .git/
 .gitignore

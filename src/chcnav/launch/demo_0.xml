@@ -1,0 +1,30 @@
+<launch>
+    <!-- hc_cgi_protocol_process_node -->
+    <node pkg="chcnav" exec="HcCgiProtocolProcessNode" name="hc_topic_driver" output="screen"/>
+    
+    <!-- hc_msg_parser_launch_node  -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="CAN" output="screen">
+        <!-- CAN settings -->
+        <param name="type" value="can"/>
+        <param name="dev" value="vcan0"/>                           <!-- CAN设备名称 -->
+        <param name="can_rate" value="500000"/>                     <!-- CAN速率 Bit/s -->
+        <param name="data_format" value="motorola"/>                <!-- 数据格式 支持 "motorola" or "intel" -->
+
+        <param name="time_id" value="800"/>                         <!-- 时间 ID  -->
+        <param name="angrate_rawIMU_id" value="801"/>               <!-- IMU角速度原始值 ID  -->
+        <param name="accel_rawIMU_id" value="802"/>                 <!-- IMU加速度原始值 ID  -->
+        <param name="sys_status_id" value="803"/>                   <!-- INS定位状态 ID  -->
+        <param name="altitude_id" value="805"/>                     <!-- 海拔高度 ID  -->
+        <param name="pos_sigma_id" value="806"/>                    <!-- 位置西格玛 ID  -->
+        <param name="velocity_level_id" value="807"/>               <!-- 大地坐标系速度 ID  -->
+        <param name="velocity_level_sigma_id" value="808"/>         <!-- 大地坐标系速度西格玛 ID  -->
+        <param name="accel_vehicle_id" value="809"/>                <!-- 车辆坐标系加速度 ID  -->
+        <param name="heading_pitch_roll_id" value="810"/>           <!-- 姿态角 ID  -->
+        <param name="heading_pitch_roll_sigma_id" value="811"/>     <!-- 姿态角西格玛 ID  -->
+        <param name="angrate_vehicle_id" value="812"/>              <!-- 车辆坐标系角速度 ID  -->
+        <param name="longitude_id" value="813"/>                    <!-- 定位经度 ID  -->
+        <param name="latitude_id" value="814"/>                     <!-- 定位纬度 ID  -->
+        <!-- CAN settings end -->
+    </node>  
+
+</launch>

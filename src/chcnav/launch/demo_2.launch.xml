@@ -1,0 +1,5 @@
+<launch>
+    <!-- hc_topic_driver -->
+  <include file="$(find-pkg-share chcnav)/launch/demo_2.xml"/>
+
+</launch>

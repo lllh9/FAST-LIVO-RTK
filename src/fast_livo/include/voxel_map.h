@@ -210,6 +210,11 @@ public:
 
   V3D last_slide_position = {0,0,0};
 
+  // ONLINE_RTK: Antenna lever arm is expressed in the IMU frame.  The gate is
+  // a 3-DoF normalized innovation squared threshold (16.27 ~= 99.9%).
+  V3D rtk_lever_arm_ = V3D::Zero();
+  double rtk_innovation_gate_ = 16.27;
+
   geometry_msgs::msg::Quaternion geoQuat_;
 
   int feats_down_size_;
@@ -228,7 +233,7 @@ public:
     feats_down_world_.reset(new PointCloudXYZI());
   };
 
-  void StateEstimation(StatesGroup &state_propagat, bool rtk_good, V3D rtk_means);
+  void StateEstimation(StatesGroup &state_propagat, bool rtk_good, const RTK &rtk_measurement);
   void TransformLidar(const Eigen::Matrix3d rot, const Eigen::Vector3d t, const PointCloudXYZI::Ptr &input_cloud,
                       pcl::PointCloud<pcl::PointXYZI>::Ptr &trans_cloud);
 
